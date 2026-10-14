@@ -1,0 +1,567 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World Music</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#101018;color:white;font-family:Arial,sans-serif}
+header{padding:24px 18px;background:linear-gradient(135deg,#7028e4,#ed3986)}
+h1{margin:0 0 8px;font-size:30px}
+main{padding:20px;max-width:850px;margin:auto}
+input,button{font-size:16px;border:0;border-radius:12px;padding:13px}
+input{width:100%;background:#252531;color:white;margin:12px 0}
+button{background:#a855f7;color:white;cursor:pointer}
+.categories{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 22px}
+.song{display:flex;align-items:center;gap:12px;background:#20202c;padding:12px;border-radius:14px;margin:10px 0}
+.song img{width:65px;height:65px;border-radius:10px;object-fit:cover}
+.details{flex:1;min-width:0}
+.details p{margin:5px 0;color:#bbb;font-size:14px}
+audio{width:100%;margin-top:20px}
+small{color:#aaa}
+
+.song button.active {
+  background: #22c55e;
+  color: #07130b;
+  box-shadow: 0 0 0 3px #86efac88;
+  transform: scale(0.97);
+}
+.song button:active, #stopButton:active {
+  transform: scale(0.94);
+  filter: brightness(1.25);
+}
+#musicPopup {
+  display: none;
+  position: fixed;
+  z-index: 9999;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 90%;
+  padding: 14px 20px;
+  border-radius: 18px;
+  color: white;
+  background: rgba(35, 25, 55, 0.88);
+  border: 1px solid rgba(255,255,255,.3);
+  box-shadow: 0 8px 35px #0008;
+  backdrop-filter: blur(20px);
+}
+
+
+/* Persistent liquid-glass player */
+#musicPopup {
+  display: none;
+  position: fixed;
+  z-index: 99999;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, calc(100% - 24px));
+  box-sizing: border-box;
+  padding: 16px;
+  border-radius: 22px;
+  color: white;
+  background: rgba(30, 30, 42, .78);
+  border: 1px solid rgba(255,255,255,.3);
+  box-shadow: 0 10px 40px rgba(0,0,0,.3);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+.popup-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
+}
+.popup-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.popup-controls button {
+  flex: 1;
+  min-width: 65px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  color: white;
+  background: rgba(255,255,255,.14);
+  border: 1px solid rgba(255,255,255,.25);
+  cursor: pointer;
+}
+.popup-controls button:hover {
+  background: rgba(255,255,255,.28);
+}
+
+
+/* Liquid-glass music progress bar */
+.popup-progress-wrap {
+  width: 100%;
+  margin: 2px 0 0;
+}
+.popup-progress {
+  display: block;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  accent-color: #c084fc;
+  background: transparent;
+}
+.popup-times {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 0 14px;
+  color: rgba(255,255,255,.75);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+</style>
+</head>
+<body>
+<header>
+  <h1>🎵 World Music</h1>
+  <p>Discover your next favorite song.</p>
+</header>
+<main>
+  <h2>Find music worldwide</h2>
+  <form id="searchForm">
+    <input id="query" placeholder="Search songs or artists..." required>
+    <button type="submit">Search Music</button>
+  </form>
+  <div class="categories">
+    <button onclick="searchMusic('Hindi songs')">Hindi</button>
+    <button onclick="searchMusic('Kannada music')">Kannada</button>
+    <button onclick="searchMusic('English pop')">English</button>
+    <button onclick="searchMusic('Korean pop')">K-Pop</button>
+    <button onclick="searchMusic('Latin music')">Latin</button>
+  </div>
+  <h2 id="heading">Popular discoveries</h2>
+  <div id="results"></div>
+  <p id="status"><small>Search for a song or artist to begin.</small></p>
+  <h3 id="nowPlaying">Choose a track to play</h3>
+  <button id="stopButton" type="button">■ Stop</button>
+<audio id="player" controls></audio>
+  <p><small>Preview availability depends on the music source.</small></p>
+</main>
+<div id="musicPopup" role="status"></div>
+<script src="jamendo-config.js"></script>
+<script src="config.js"></script>
+<script>
+const results = document.getElementById('results');
+const status = document.getElementById('status');
+const player = document.getElementById('player');
+const heading = document.getElementById('heading');
+
+
+const musicPopup = document.getElementById('musicPopup');
+let currentTrackButton = null;
+
+musicPopup.innerHTML = '';
+
+const popupTitle = document.createElement('div');
+popupTitle.className = 'popup-title';
+popupTitle.textContent = 'Search and play a song';
+
+const popupControls = document.createElement('div');
+popupControls.className = 'popup-controls';
+
+function popupButton(label, action) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = label;
+  b.addEventListener('click', action);
+  popupControls.appendChild(b);
+  return b;
+}
+
+popupButton('Previous', () => moveTrack(-1));
+
+const popupPlayButton = popupButton('Play', () => {
+  if (player.paused) {
+    if (currentTrackButton) currentTrackButton.click();
+  } else {
+    player.pause();
+  }
+});
+
+popupButton('Stop', () => {
+  player.pause();
+  player.currentTime = 0;
+  popupTitle.textContent = 'Stopped';
+});
+
+popupButton('Next', () => moveTrack(1));
+
+const progressWrap = document.createElement('div');
+progressWrap.className = 'popup-progress-wrap';
+
+const progressBar = document.createElement('input');
+progressBar.type = 'range';
+progressBar.className = 'popup-progress';
+progressBar.min = '0';
+progressBar.max = '1000';
+progressBar.value = '0';
+progressBar.setAttribute('aria-label', 'Song progress');
+progressBar.title = 'Drag to seek through the song';
+
+const progressTimes = document.createElement('div');
+progressTimes.className = 'popup-times';
+
+const elapsedTime = document.createElement('span');
+elapsedTime.textContent = '0:00';
+
+const totalTime = document.createElement('span');
+totalTime.textContent = '0:00';
+
+progressTimes.append(elapsedTime, totalTime);
+progressWrap.appendChild(progressBar);
+musicPopup.append(popupTitle, progressWrap, progressTimes, popupControls);
+
+function formatTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const minutes = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return minutes + ':' + String(secs).padStart(2, '0');
+}
+
+function updateProgress() {
+  const duration = player.duration;
+  const current = Number.isFinite(player.currentTime)
+    ? player.currentTime : 0;
+
+  if (Number.isFinite(duration) && duration > 0) {
+    progressBar.value = String(Math.round(current / duration * 1000));
+    totalTime.textContent = formatTime(duration);
+  } else {
+    progressBar.value = '0';
+    totalTime.textContent = '0:00';
+  }
+
+  elapsedTime.textContent = formatTime(current);
+}
+
+progressBar.addEventListener('input', () => {
+  if (Number.isFinite(player.duration) && player.duration > 0) {
+    player.currentTime =
+      Number(progressBar.value) / 1000 * player.duration;
+    updateProgress();
+  }
+});
+
+player.addEventListener('timeupdate', updateProgress);
+player.addEventListener('loadedmetadata', updateProgress);
+player.addEventListener('durationchange', updateProgress);
+player.addEventListener('seeking', updateProgress);
+player.addEventListener('seeked', updateProgress);
+player.addEventListener('ended', updateProgress);
+
+function moveTrack(direction) {
+  const buttons = Array.from(results.querySelectorAll('.song button'));
+  if (!buttons.length) return;
+
+  const index = buttons.indexOf(currentTrackButton);
+  const next = index < 0
+    ? (direction > 0 ? 0 : buttons.length - 1)
+    : (index + direction + buttons.length) % buttons.length;
+
+  buttons[next].click();
+}
+
+function showMusicPopup(message) {
+  popupTitle.textContent = message;
+  musicPopup.style.display = 'block';
+}
+
+player.addEventListener('play', () => {
+  popupPlayButton.textContent = 'Pause';
+  if (currentTrackButton) {
+    currentTrackButton.textContent = '⏸ Pause';
+    currentTrackButton.classList.add('active');
+  }
+});
+
+player.addEventListener('pause', () => {
+  popupPlayButton.textContent = 'Play';
+  if (currentTrackButton) {
+    currentTrackButton.textContent = '▶ Play';
+    currentTrackButton.classList.remove('active');
+  }
+});
+
+player.addEventListener('ended', () => {
+  if (currentTrackButton) {
+    currentTrackButton.textContent = '▶ Play';
+    currentTrackButton.classList.remove('active');
+  }
+  showMusicPopup('Track finished.');
+});
+
+document.getElementById('stopButton').addEventListener('click', () => {
+  player.pause();
+  player.currentTime = 0;
+  if (currentTrackButton) {
+    currentTrackButton.textContent = '▶ Play';
+    currentTrackButton.classList.remove('active');
+  }
+  showMusicPopup('Playback stopped.');
+});
+
+
+document.getElementById('searchForm').addEventListener('submit', e => {
+  e.preventDefault();
+  searchMusic(document.getElementById('query').value);
+});
+
+async function searchMusic(term) {
+  if (!term.trim()) return;
+
+  heading.textContent = 'Results for ' + term;
+  results.replaceChildren();
+  status.textContent = 'Searching Jamendo music...';
+
+  try {
+    if (typeof JAMENDO_CLIENT_ID === 'undefined' ||
+        !JAMENDO_CLIENT_ID ||
+        JAMENDO_CLIENT_ID === 'PASTE_YOUR_CLIENT_ID_HERE') {
+      throw new Error('Add your Jamendo Client ID to jamendo-config.js');
+    }
+
+    const languageQueries = {
+      'kannada': 'ಕನ್ನಡ ಹಾಡುಗಳು',
+      'hindi': 'Hindi songs',
+      'korean': 'Korean pop',
+      'k-pop': 'Korean pop',
+      'chinese': 'Chinese pop',
+      'english': 'English pop',
+      'latin': 'Latin music'
+    };
+
+    const normalizedTerm = term.trim().toLowerCase();
+    const searchTerm = languageQueries[normalizedTerm] || term.trim();
+
+    const params = new URLSearchParams({
+      client_id: JAMENDO_CLIENT_ID,
+      format: 'json',
+      search: searchTerm,
+      limit: '25',
+      audioformat: 'mp31'
+    });
+
+    const response = await fetch(
+      'https://api.jamendo.com/v3.0/tracks/?' + params.toString()
+    );
+    if (!response.ok) throw new Error('Jamendo request failed');
+
+    const data = await response.json();
+    if (data.headers && data.headers.status !== 'success') {
+      throw new Error(data.headers.error_message || 'Jamendo API error');
+    }
+
+    results.replaceChildren();
+    console.log('Jamendo response:', data);
+    const tracks = (data.results || []).filter(track => track.audio);
+    console.log('Playable tracks:', tracks.length);
+
+    if (!tracks.length) {
+      status.textContent = 'No playable tracks found. Try another search.';
+      return;
+    }
+
+    status.textContent = 'Found ' + tracks.length + ' tracks on Jamendo.';
+
+    tracks.forEach(track => {
+      const card = document.createElement('div');
+      card.className = 'song';
+
+      const cover = document.createElement('img');
+      cover.src = track.image || track.album_image || '';
+      cover.alt = 'Album artwork';
+      cover.loading = 'lazy';
+
+      const details = document.createElement('div');
+      details.className = 'details';
+
+      const title = document.createElement('strong');
+      title.textContent = track.name || 'Unknown track';
+
+      const artist = document.createElement('p');
+      artist.textContent = track.artist_name || 'Unknown artist';
+
+      const album = document.createElement('small');
+      album.textContent = track.album_name || 'Independent music';
+
+      details.append(title, artist, album);
+
+      const play = document.createElement('button');
+      play.type = 'button';
+      play.textContent = '▶ Play';
+      play.setAttribute('aria-label', 'Play track');
+
+      play.addEventListener('click', async () => {
+        if (player.dataset.trackUrl === track.audio && !player.paused) {
+          player.pause();
+          return;
+        }
+
+        if (currentTrackButton && currentTrackButton !== play) {
+          currentTrackButton.classList.remove('active');
+          currentTrackButton.textContent = '▶ Play';
+        }
+
+        currentTrackButton = play;
+        player.pause();
+        player.dataset.trackUrl = track.audio;
+        player.src = track.audio;
+        player.load();
+
+        play.textContent = '⏳ Loading';
+        play.classList.add('active');
+
+        document.getElementById('nowPlaying').textContent =
+          'Now playing: ' + (track.name || 'Unknown track') +
+          ' — ' + (track.artist_name || 'Unknown artist');
+
+        showMusicPopup('🎵 Loading: ' + (track.name || 'track'));
+
+        try {
+          await player.play();
+          play.textContent = '⏸ Pause';
+          showMusicPopup('🎵 Now playing: ' + (track.name || 'track'));
+        } catch (error) {
+          console.error('Playback error:', error);
+          play.textContent = '▶ Play';
+          play.classList.remove('active');
+          showMusicPopup('Could not play this track. Try another one.');
+        }
+      });
+
+      card.append(cover, details, play);
+      results.append(card);
+    });
+  } catch (error) {
+    console.error('Jamendo search error:', error);
+    status.textContent = error.message ||
+      'Could not load music. Check your connection and Client ID.';
+  }
+}
+</script>
+
+<!-- YouTube Music Search -->
+<section id="youtube-music" style="margin:20px 0;padding:20px;border-radius:20px;background:rgba(255,255,255,0.08);backdrop-filter:blur(20px);">
+  <h2>🌎 Discover Music Worldwide</h2>
+  <p>Search for songs, artists, and music from around the world.</p>
+
+  <form id="youtubeSearchForm">
+    <input
+      id="youtubeQuery"
+      type="search"
+      placeholder="Search any song or artist..."
+      required
+      style="width:70%;padding:12px;border-radius:12px;"
+    >
+    <button type="submit" style="padding:12px;border-radius:12px;">
+      Search YouTube
+    </button>
+  </form>
+
+  <div id="youtubeResults" style="margin-top:16px;"></div>
+</section>
+
+<script>
+document.getElementById('youtubeSearchForm').addEventListener('submit', async function(event) {
+  event.preventDefault();
+
+  const query = document.getElementById('youtubeQuery').value.trim();
+  if (!query) return;
+
+  const results = document.getElementById('youtubeResults');
+  results.replaceChildren();
+
+  const message = document.createElement('p');
+  message.textContent = 'Searching for matching music...';
+  results.appendChild(message);
+
+  try {
+    if (typeof YOUTUBE_API_KEY === 'undefined' ||
+        !YOUTUBE_API_KEY ||
+        YOUTUBE_API_KEY.includes('PASTE_YOUR')) {
+      throw new Error('YouTube API key is missing from config.js');
+    }
+
+    const params = new URLSearchParams({
+      key: YOUTUBE_API_KEY,
+      part: 'snippet',
+      q: query,
+      type: 'video',
+      maxResults: '10',
+      videoEmbeddable: 'true',
+      safeSearch: 'moderate'
+    });
+
+    const response = await fetch(
+      'https://www.googleapis.com/youtube/v3/search?' + params.toString()
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.error?.message || 'YouTube search failed. Check API settings.'
+      );
+    }
+
+    const videos = (data.items || []).filter(item => item.id?.videoId);
+    results.replaceChildren();
+
+    if (!videos.length) {
+      message.textContent = 'No matching embeddable videos found. Try another song or artist.';
+      results.appendChild(message);
+      return;
+    }
+
+    videos.forEach(video => {
+      const card = document.createElement('div');
+      card.style.cssText =
+        'margin:16px 0;padding:16px;border-radius:18px;' +
+        'background:rgba(255,255,255,0.08);backdrop-filter:blur(16px);';
+
+      const title = document.createElement('h3');
+      title.textContent = video.snippet.title;
+
+      const artist = document.createElement('p');
+      artist.textContent = video.snippet.channelTitle;
+
+      const frame = document.createElement('iframe');
+      frame.src =
+        'https://www.youtube-nocookie.com/embed/' +
+        encodeURIComponent(video.id.videoId);
+      frame.title = video.snippet.title;
+      frame.allow =
+        'accelerometer; autoplay; clipboard-write; encrypted-media; ' +
+        'gyroscope; picture-in-picture; web-share';
+      frame.allowFullscreen = true;
+      frame.referrerPolicy = 'strict-origin-when-cross-origin';
+      frame.loading = 'lazy';
+      frame.style.cssText =
+        'display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:12px;';
+
+      card.append(title, artist, frame);
+      results.appendChild(card);
+    });
+  } catch (error) {
+    console.error('YouTube music search error:', error);
+    results.replaceChildren();
+    const errorMessage = document.createElement('p');
+    errorMessage.textContent = error.message;
+    results.appendChild(errorMessage);
+  }
+});
+</script>
+</body>
+</html>
